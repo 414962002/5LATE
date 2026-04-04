@@ -47,7 +47,7 @@ See installation instructions below for details.
 
 ### Download Signed Extension
 
-1. Download: [5late-1.3.0.xpi](your-download-link)
+1. Download: [5late-1.3.0.xpi](https://github.com/414962002/5SLATE/releases/download/v1.3.0/65f33d6a9f6b4a9d91b7-1.3.0.xpi)
 2. Firefox → about:addons
 3. Gear icon → Install Add-on From File
 4. Select downloaded .xpi file
