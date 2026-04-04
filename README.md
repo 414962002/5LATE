@@ -1,3 +1,6 @@
+<img src="img/1.png" align="center" width="1000">
+<br clear="all">
+
 # 5LATE - Firefox Translation Extension
 
 Quick sidebar translator with auto-copy. Paste text, translate instantly, copy result automatically.
