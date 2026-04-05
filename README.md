@@ -3,33 +3,12 @@
 
 # 5LATE - Firefox Translation Extension
 
-Quick sidebar translator with auto-copy. Paste text, translate instantly, copy result automatically.
+*Quick sidebar translator with auto-copy. Paste text, translate instantly, copy result automatically*  
 
 &nbsp;
 
-## Important Notes
-
-**Installation Options:**
-
-This extension can be used in three ways:
-
-1. **Firefox Add-ons Store** (Coming soon) - One-click install, automatic updates
-2. **Temporary Installation** - Works immediately but removed on Firefox restart
-3. **Self-Signed Permanent** - Sign with Mozilla (free), stays installed permanently
-
-&nbsp;
-
-**For developers/advanced users:**
-
-- Temporary installation is quick for testing but resets every Firefox restart
-- For permanent use, you must sign the extension with Mozilla (takes 5-10 minutes, free)
-- Firefox blocks unsigned extensions for security reasons
-
-See installation instructions below for details.
-
-&nbsp;
-
-## Features
+```
+Features
 
 - Auto translation after 1.5 seconds
 - Auto language detection (11 languages)
@@ -40,22 +19,42 @@ See installation instructions below for details.
 - Cloudflare Worker proxy (optional)
 - Rate limiting (100 req/min per IP)
 - Daily rotating token authentication
+```
+
+&nbsp;
+
+## Installation Options:
+
+This extension can be used in three ways:
+
+1. **Firefox Add-ons Store**  
+One-click install  
+   
+3. **Temporary Installation**  
+Works immediately but removed on Firefox restart   
+*Temporary installation is quick for testing but resets every Firefox restart*  
+
+5. **Self-Signed Permanent**  
+Sign with Mozilla (free), stays installed permanently  
+*For permanent use, you must sign the extension with Mozilla (takes 5-10 minutes, free)*
+
+&nbsp;
+
+### Details:
 
 &nbsp;
 
 ## Option 1: Firefox Add-ons Store (Recommended)
 
-### Download Signed Extension
+### Click & Use Signed Extension
 
-1. Download: [5late-1.3.0.xpi](https://github.com/414962002/5SLATE/releases/download/v1.3.0/65f33d6a9f6b4a9d91b7-1.3.0.xpi)
-2. Firefox → about:addons
-3. Gear icon → Install Add-on From File
-4. Select downloaded .xpi file
-5. Confirm installation
+[5late-1.3.0.xpi](https://github.com/414962002/5SLATE/releases/download/v1.3.0/65f33d6a9f6b4a9d91b7-1.3.0.xpi)
 
-&nbsp;
 
-### Option 2: Temporary Installation (Quick Testing)
+&nbsp;  
+
+
+## Option 2: Temporary Installation (Testing)
 
 **Best for:** Testing, development, short-term use
 
@@ -94,7 +93,7 @@ Click the extension icon in Firefox toolbar.
 
 &nbsp;
 
-### Option 3: Permanent Installation (Self-Signed)
+## Option 3: Permanent Installation (Self-Signed)
 
 **Best for:** Daily use, permanent installation
 
@@ -335,18 +334,12 @@ Extension → Cloudflare Worker → Google Translate
 - Rate limiting (100 req/min per IP)
 - No user accounts or tracking
 - No persistent data storage (except sidebar state)
-- Open source (auditable code)
-
-&nbsp;
-
-## License
-
-Open source - see LICENSE file for details.
+- Open source (auditable code)  
 
 &nbsp;
 
 ---
 04.04.26  
-**Version:** 1.3.0  
-**Status:** Production Ready  
+1.3.0  
+Production Ready  
 
