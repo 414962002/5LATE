@@ -51,8 +51,7 @@ See installation instructions below for details.
 
 ### Click & Use Signed Extension
 
-[5late-1.3.0.xpi](https://github.com/414962002/5SLATE/releases/download/v1.3.0/65f33d6a9f6b4a9d91b7-1.3.0.xpi)
-
+[5late-1.4.0.xpi](https://github.com/414962002/5LATE/releases/download/v1.4.0/65f33d6a9f6b4a9d91b7-1.4.0.xpi)
 &nbsp;
 
 ### Option 2: Temporary Installation (Quick Testing)
