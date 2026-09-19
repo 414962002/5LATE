@@ -54,6 +54,8 @@ See installation instructions below for details.
 [5late-1.4.0.xpi](https://github.com/414962002/5LATE/releases/download/v1.4.0/65f33d6a9f6b4a9d91b7-1.4.0.xpi)
 &nbsp;
 
+&nbsp;
+
 ### Option 2: Temporary Installation (Quick Testing)
 
 **Best for:** Testing, development, short-term use
