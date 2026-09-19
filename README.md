@@ -3,58 +3,59 @@
 
 # 5LATE - Firefox Translation Extension
 
-*Quick sidebar translator with auto-copy. Paste text, translate instantly, copy result automatically*  
+Quick sidebar translator with auto-copy. Paste text, translate instantly, copy result automatically.
 
 &nbsp;
 
-```
-Features
+## Important Notes
+
+**Installation Options:**
+
+This extension can be used in three ways:
+
+1. **Firefox Add-ons Store** (Coming soon) - One-click install, automatic updates
+2. **Temporary Installation** - Works immediately but removed on Firefox restart
+3. **Self-Signed Permanent** - Sign with Mozilla (free), stays installed permanently
+
+**For developers/advanced users:**
+
+- Temporary installation is quick for testing but resets every Firefox restart
+- For permanent use, you must sign the extension with Mozilla (takes 5-10 minutes, free)
+- Firefox blocks unsigned extensions for security reasons
+
+See installation instructions below for details.
+
+&nbsp;
+
+---
+
+&nbsp;
+
+## Features
 
 - Auto translation after 1.5 seconds
 - Auto language detection (11 languages)
 - Smart EN↔RU auto-swap
+- Single-word dictionary disambiguation (Cyrillic ↔ Latin)
 - Auto-copy to clipboard
 - Sidebar mode (persistent state)
 - Tab mode (temporary session)
-- Cloudflare Worker proxy (optional)
-- Rate limiting (100 req/min per IP)
-- Daily rotating token authentication
-```
+- Direct-to-Google translation — no server proxy, nothing to deploy or maintain
 
 &nbsp;
 
-## Installation Options:
+## Installation
 
-This extension can be used in three ways:
+### Option 1: Firefox Add-ons Store (Recommended)
 
-1. **Firefox Add-ons Store**  
-One-click install  
-   
-3. **Temporary Installation**  
-Works immediately but removed on Firefox restart   
-*Temporary installation is quick for testing but resets every Firefox restart*  
-
-5. **Self-Signed Permanent**  
-Sign with Mozilla (free), stays installed permanently  
-*For permanent use, you must sign the extension with Mozilla (takes 5-10 minutes, free)*
-
-&nbsp;
-
-### Details:
-
-&nbsp;
-
-## Option 1: Firefox Add-ons Store (Recommended)
 
 ### Click & Use Signed Extension
 
 [5late-1.3.0.xpi](https://github.com/414962002/5SLATE/releases/download/v1.3.0/65f33d6a9f6b4a9d91b7-1.3.0.xpi)
 
+&nbsp;
 
-&nbsp;  
-
-
-## Option 2: Temporary Installation (Testing)
+### Option 2: Temporary Installation (Quick Testing)
 
 **Best for:** Testing, development, short-term use
 
@@ -77,7 +78,7 @@ Go to `about:debugging#/runtime/this-firefox`
 **Step 3: Load Extension**
 
 1. Click "Load Temporary Add-on"
-2. Navigate to extension folder
+2. Navigate to this folder
 3. Select `manifest.json`
 4. Extension is now loaded
 
@@ -93,7 +94,7 @@ Click the extension icon in Firefox toolbar.
 
 &nbsp;
 
-## Option 3: Permanent Installation (Self-Signed)
+### Option 3: Permanent Installation (Self-Signed)
 
 **Best for:** Daily use, permanent installation
 
@@ -104,7 +105,7 @@ Click the extension icon in Firefox toolbar.
 **Step 1: Download and Prepare**
 
 1. Download this repository
-2. Zip the extension files (manifest.json, sidebar.js, etc.)
+2. Zip the contents of this folder (manifest.json, sidebar.js, etc.)
 3. Make sure all files are in the root of the zip (not in a subfolder)
 
 &nbsp;
@@ -113,7 +114,7 @@ Click the extension icon in Firefox toolbar.
 
 1. Create account: https://addons.mozilla.org/developers/
 2. Go to: https://addons.mozilla.org/developers/addon/submit/distribution
-3. Choose "On your own" (self-distribution)
+3. Choose "On your own" (self-distribution) — or submit for the public AMO listing
 4. Upload your .zip file
 5. Mozilla validates and signs (5-10 minutes)
 6. Download the signed .xpi file
@@ -139,157 +140,6 @@ Click the extension icon in Firefox toolbar.
 
 &nbsp;
 
-## Setup Cloudflare Worker (Optional)
-
-For better reliability and rate limiting, deploy your own Cloudflare Worker proxy.
-
-### Step 1: Create Cloudflare Account
-
-Sign up at https://dash.cloudflare.com/sign-up (free tier available)
-
-&nbsp;
-
-### Step 2: Get API Token
-
-1. Dashboard → Manage Account → API Tokens
-2. Create Token → Edit Cloudflare Workers
-3. Copy token (save it securely)
-
-&nbsp;
-
-### Step 3: Get Account ID
-
-1. Go to https://dash.cloudflare.com/
-2. URL shows: `https://dash.cloudflare.com/<ACCOUNT_ID>/...`
-3. Copy the 32-character hex string
-
-&nbsp;
-
-### Step 4: Create Worker (Get Worker Name)
-
-1. Dashboard → Workers & Pages
-2. Create Application → Create Worker
-3. Name it (e.g., "5late-translator")
-4. Deploy (don't edit code yet)
-5. Copy worker URL: `https://5late-translator.workers.dev`
-
-&nbsp;
-
-### Step 5: Configure deploy.ps1
-
-Open `deploy.ps1` and update:
-
-```powershell
-$ACCOUNT_ID = "your_account_id_here"
-$API_TOKEN = "your_api_token_here"
-$SCRIPT_NAME = "5late-translator"
-```
-
-&nbsp;
-
-### Step 6: Configure SECRET_SALT
-
-Generate random string (20+ characters):
-
-```
-my-dog-loves-pizza-on-tuesday-2026
-k9Lm3pQr7sWx2Yz5Aa8Bb1Cc4Dd6Ee0
-```
-
-Update in both files (MUST BE THE SAME):
-
-**File 1:** `worker.js` (line 15)
-
-```javascript
-const SECRET_SALT = "your-random-secret-here";
-```
-
-**File 2:** `sidebar.js` (line 7)
-
-```javascript
-const SECRET_SALT = "your-random-secret-here";  // Same as worker.js
-```
-
-&nbsp;
-
-### Step 7: Deploy Worker Code
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\deploy.ps1
-# Choose option 2 (Upload)
-```
-
-&nbsp;
-
-### Step 8: Update Extension Worker URL
-
-Open `sidebar.js` and update:
-
-```javascript
-const WORKER_URL = "https://5late-translator.workers.dev/translate";
-```
-
-&nbsp;
-
-### Step 9: Reload Extension
-
-Firefox → `about:debugging` → Reload extension
-
-&nbsp;
-
-### Step 10: Test
-
-Translate something in the sidebar. Check status line shows "cloudflare worker".
-
-&nbsp;
-
-## Configuration
-
-### SECRET_SALT
-
-A shared secret between extension and worker for authentication.
-
-**Generate random string:**
-
-```
-my-dog-loves-pizza-on-tuesday-2026
-k9Lm3pQr7sWx2Yz5Aa8Bb1Cc4Dd6Ee0
-```
-
-**Set in both files:**
-
-- Extension: `sidebar.js` (line 7)
-- Worker: `worker.js` (line 15)
-
-**Must be the same in both files!**
-
-See `docs/SALT_SUMMARY.md` for details.
-
-&nbsp;
-
-### Deploy Script (deploy.ps1)
-
-PowerShell script to upload/download worker code.
-
-**Configure:**
-
-```powershell
-$ACCOUNT_ID = "your_cloudflare_account_id_here"
-$API_TOKEN = "your_cloudflare_api_token_here"
-$SCRIPT_NAME = "your-worker-name-here"
-```
-
-**Run:**
-
-```powershell
-cd worker
-powershell -ExecutionPolicy Bypass -File .\deploy.ps1
-```
-
-See `docs/WORKER_WORKFLOW.md` for details.
-
-&nbsp;
-
 ## Usage
 
 1. Click extension icon to open sidebar
@@ -306,40 +156,49 @@ Russian, English, Spanish, French, German, Italian, Japanese, Chinese, Arabic, H
 
 &nbsp;
 
-## Documentation
-
-- `docs/SALT_SUMMARY.md` - SECRET_SALT configuration guide
-- `docs/WORKER_WORKFLOW.md` - Cloudflare Worker deployment guide
-- `docs/CLOUDFLARE_SUMMARY.md` - Detailed Cloudflare setup
-
-&nbsp;
-
 ## Architecture
 
 ```
-Extension → Cloudflare Worker → Google Translate
+Extension → Google Translate (direct)
 ```
 
 **Fallback system:**
 
-1. Cloudflare Worker → Google GTX
-2. Direct → Google GTX
-3. Direct → Google clients5
+1. Direct → Google GTX (single-word queries get a disambiguation hint instead of plain auto-detect)
+2. Direct → Google clients5 (used only if GTX fails)
+
+No server-side proxy. Earlier versions (≤1.3.0) routed translation through a
+Cloudflare Worker, on the theory that Google blocks browser-origin requests
+more than server-to-server ones. Weeks of production logs showed the
+opposite: the Worker's shared Cloudflare IP got throttled/CAPTCHA'd more
+often than this browser's own connection. The Worker was removed in 1.4.0;
+the one feature it added — single-word dictionary disambiguation — was
+ported directly into the extension (`buildGtxQuery()` in `sidebar.js`).
 
 &nbsp;
 
-## Security
+## Privacy & Security
 
-- Daily rotating tokens (SHA-256)
-- Rate limiting (100 req/min per IP)
-- No user accounts or tracking
-- No persistent data storage (except sidebar state)
-- Open source (auditable code)  
+- No accounts, no tracking, no analytics
+- No server-side component — every translation request goes straight from
+  your browser to Google's translation endpoints
+- Permissions requested: `translate.googleapis.com` and `clients5.google.com`
+  (the two translation endpoints), `clipboardWrite` (auto-copy results), and
+  `storage` (persist sidebar state locally)
+- No data leaves your machine except the text being translated, sent
+  directly to Google
+- Open source (auditable code)
+
+&nbsp;
+
+## License
+
+Open source. *(No LICENSE file is included in this repository yet — treat as
+all-rights-reserved until one is added.)*
 
 &nbsp;
 
 ---
-04.04.26  
-1.3.0  
-Production Ready  
 
+**Version:** 1.4.0
+**Status:** Production Ready ✅
