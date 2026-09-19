@@ -1,12 +1,13 @@
 // Quick Translate Sidebar Script
-
-// Cloudflare Worker configuration
-const WORKER_URL = "https://5late-translator.5lateextentionfirefox.workers.dev/translate";
-
-const USE_WORKER = true;
-// Secret salt for token generation (change this to your own random string)
-// ⚠️ IMPORTANT: Replace this with your own unique secret before deploying!
-const SECRET_SALT = "your-secret-salt-here-change-this-to-random-string";
+//
+// 2026-09-13: Cloudflare Worker proxy removed from the translation path.
+// It was added on the theory that Google blocks browser-origin requests more
+// than server-to-server ones (see a_docs/CLOUDFLARE_SUMMARY.md). Weeks of
+// production logs showed the opposite here: Cloudflare's shared IP got
+// throttled/CAPTCHA'd more than this browser's own connection. Direct calls
+// are now Tier 1; the Worker's one real feature (single-word disambiguation)
+// is ported into buildGtxQuery() below. worker_for_cloudflare/worker.js is
+// left deployed but unused, in case a real API-key-backed proxy is wanted later.
 
 // Progress bar control
 let progressTimer = null;
@@ -343,15 +344,43 @@ function chunkText(text, maxChars = 3500) {
   return chunks;
 }
 
-// Generate daily token (same algorithm as Worker)
-async function getDailyToken() {
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  console.log('[AUTH] Token date used:', today);
-  const encoder = new TextEncoder();
-  const data = encoder.encode(today + SECRET_SALT);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+// Build the GTX query + source-lang hint for single-word lookups.
+// Ported from the old Cloudflare Worker (worker_for_cloudflare/worker.js) —
+// see a_docs/single_word_fix/. Google's auto-detect often mis-guesses short
+// single words, so a lone word gets an explicit hint instead of sl=auto:
+//   - Cyrillic word + target 'en' → "значение слова <word>" + sl=ru
+//     (disambiguation trick — Google's dictionary entry is more accurate
+//     framed this way; the prefix is stripped back off the result after)
+//   - Cyrillic word + other target → plain word + sl=ru
+//   - Latin word (any target)      → plain word + sl=en
+//   - anything else (sentences, mixed text) → unchanged, sl stays 'auto'
+function buildGtxQuery(text, targetLang) {
+  const trimmed = text.trim();
+  const isSingleWord = /^[\p{L}]{1,30}$/u.test(trimmed);
+  const hasCyrillic = /[Ѐ-ӿ]/.test(text);
+  const hasLatin = /^[A-Za-z]+$/.test(trimmed);
+
+  if (!isSingleWord) {
+    return { query: text, sl: 'auto', isSingleWord: false };
+  }
+  if (hasCyrillic) {
+    return targetLang === 'en'
+      ? { query: 'значение слова ' + text, sl: 'ru', isSingleWord: true }
+      : { query: text, sl: 'ru', isSingleWord: true };
+  }
+  if (hasLatin) {
+    return { query: text, sl: 'en', isSingleWord: true };
+  }
+  return { query: text, sl: 'auto', isSingleWord: true };
+}
+
+// Strip the disambiguation-trick prefix back off a single-word result.
+function stripSingleWordPrefix(translatedText) {
+  return translatedText
+    .replace(/^значение слова\s+/i, '')
+    .replace(/^meaning of (the )?word\s+/i, '')
+    .replace(/^meaning of /i, '')
+    .trim();
 }
 
 // Show/hide progress indicator
@@ -367,93 +396,48 @@ function showProgress(current, total) {
   }
 }
 
-// Translate a single chunk using Cloudflare Worker or direct API
+// Translate a single chunk via direct Google endpoints (no server proxy).
+//
+// 2-tier fallback: direct GTX -> direct clients5. GTX gets a single-word
+// disambiguation hint via buildGtxQuery() (ported from the old Cloudflare
+// Worker) instead of always sl=auto. Each tier logs "[TIER:xxx]
+// start/success/fail" to the console so the whole attempt is visible
+// end-to-end in Firefox devtools without cross-referencing the Network tab.
+// `attempts` collects one reason per failed tier so the final error (if both
+// fail) is a real summary, not just the last raw message.
 async function translateChunk(text, sourceLang, targetLang) {
-  
-  // Try Cloudflare Worker first if enabled
-  if (USE_WORKER) {
-    try {
-      console.log('[TRANSLATE] Using Cloudflare Worker with token auth');
-      
-      const token = await getDailyToken();
+  const attempts = []; // { tier, detail }
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-      try {
-        const response = await fetch(WORKER_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Token": token
-          },
-          body: JSON.stringify({
-            text: text,
-            target: targetLang
-          }),
-          signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.message || `Worker failed with status ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        if (data.error) {
-          throw new Error(data.message || data.error);
-        }
-
-        console.log('[TRANSLATE] Worker success:', data.source);
-
-        return {
-          translatedText: data.translatedText,
-          detectedLang: data.detectedLang || 'auto',
-          service: 'cloudflare worker',
-          workerVersion: data.version || null
-        };
-
-      } catch (fetchError) {
-        clearTimeout(timeoutId);
-        throw fetchError;
-      }
-
-    } catch (workerError) {
-      if (workerError.name === 'AbortError') {
-        console.warn('[TRANSLATE] Worker timeout (8s) → fallback to direct API');
-      } else {
-        console.warn('[TRANSLATE] Worker failed → fallback to direct API:', workerError.message);
-      }
-      // Fall through to direct API fallback below
-    }
-  }
-  
-  // Direct API fallback (original method)
-  // Try GTX endpoint first
+  // TIER 1 — direct GTX
   try {
+    const t0 = performance.now();
+    console.log('[TIER:gtx] start');
+
+    const { query, sl, isSingleWord } = buildGtxQuery(text, targetLang);
+
     // Add dt=md for better single-word translations (main dictionary meaning)
     // Add dt=bd for alternative meanings
-    const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&dt=md&dt=bd&q=${encodeURIComponent(text)}`;
-    
+    const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${targetLang}&dt=t&dt=md&dt=bd&q=${encodeURIComponent(query)}`;
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
+
     try {
       const response = await fetch(gtxUrl, {
         signal: controller.signal
       });
-      
+
       clearTimeout(timeoutId);
-      
+      const ms = Math.round(performance.now() - t0);
+
       if (!response.ok) {
+        console.warn(`[TIER:gtx] fail (${ms}ms) — status ${response.status}`);
+        attempts.push({ tier: 'gtx', detail: `status ${response.status}` });
         throw new Error(`GTX failed with status ${response.status}`);
       }
-      
+
       const result = await response.json();
-      
+
       // Parse GTX endpoint response
       let translatedText = '';
       if (result && result[0]) {
@@ -463,67 +447,109 @@ async function translateChunk(text, sourceLang, targetLang) {
           }
         }
       }
-      
+
+      // Clean up the disambiguation-trick prefix, if one was added
+      if (isSingleWord) {
+        translatedText = stripSingleWordPrefix(translatedText);
+      }
+
       const detectedLang = result[2] ? result[2] : 'auto';
-      
+
+      console.log(`[TIER:gtx] success (${ms}ms)`);
       return { translatedText, detectedLang, service: 'google gtx' };
-      
+
     } catch (error) {
       clearTimeout(timeoutId);
+      const ms = Math.round(performance.now() - t0);
+      if (error.name === 'AbortError') {
+        console.warn(`[TIER:gtx] timeout (${ms}ms) — 10s exceeded`);
+        attempts.push({ tier: 'gtx', detail: 'timeout 10s' });
+      }
       throw error;
     }
-    
+
   } catch (gtxError) {
+    if (attempts[attempts.length - 1]?.tier !== 'gtx') {
+      console.warn('[TIER:gtx] fail —', gtxError.message);
+      attempts.push({ tier: 'gtx', detail: gtxError.message });
+    }
+
     // GTX failed, try clients5 as fallback
-    console.warn('[TRANSLATE] GTX failed, trying clients5 fallback:', gtxError.message);
-    
+    const t0 = performance.now();
+    console.log('[TIER:clients5] start');
+
     const clients5Url = 'https://clients5.google.com/translate_a/t';
-    
+
     const body = new URLSearchParams();
     body.append("client", "dict-chrome-ex");
     body.append("sl", sourceLang);
     body.append("tl", targetLang);
     body.append("q", text);
-    
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
+
     try {
+      // redirect: "manual" — Google sometimes redirects THIS endpoint to a
+      // /sorry/ verification page when it flags the caller as abuse. Letting
+      // fetch follow that redirect hits www.google.com, an origin the
+      // extension has no host permission for, which Firefox reports as an
+      // opaque "NetworkError when attempting to fetch resource." Intercepting
+      // the redirect ourselves fails fast with a clear, specific reason
+      // instead of that generic message.
       const response = await fetch(clients5Url, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
         },
         body: body,
+        redirect: "manual",
         signal: controller.signal
       });
-      
+
       clearTimeout(timeoutId);
-      
+      const ms = Math.round(performance.now() - t0);
+
+      if (response.type === "opaqueredirect") {
+        console.warn(`[TIER:clients5] blocked (${ms}ms) — redirected to Google verification page`);
+        attempts.push({ tier: 'clients5', detail: 'blocked (Google verification redirect)' });
+        throw new Error('blocked (Google verification redirect)');
+      }
+
       if (!response.ok) {
+        console.warn(`[TIER:clients5] fail (${ms}ms) — status ${response.status}`);
+        attempts.push({ tier: 'clients5', detail: `status ${response.status}` });
         throw new Error(`clients5 failed with status ${response.status}`);
       }
-      
+
       const result = await response.json();
-      
+
       // Parse clients5 endpoint response
       let translatedText = '';
       if (Array.isArray(result?.[0])) {
         translatedText = result[0].map(x => x[0]).join("");
       }
-      
+
       const detectedLang = 'auto';
-      
+
+      console.log(`[TIER:clients5] success (${ms}ms)`);
       return { translatedText, detectedLang, service: 'google clients5' };
-      
+
     } catch (error) {
       clearTimeout(timeoutId);
-      
+      const ms = Math.round(performance.now() - t0);
+
       if (error.name === 'AbortError') {
-        throw new Error('Translation timed out - check your connection');
+        console.warn(`[TIER:clients5] timeout (${ms}ms) — 10s exceeded`);
+        attempts.push({ tier: 'clients5', detail: 'timeout 10s' });
+      } else if (attempts[attempts.length - 1]?.tier !== 'clients5') {
+        console.warn(`[TIER:clients5] fail (${ms}ms) — ${error.message}`);
+        attempts.push({ tier: 'clients5', detail: error.message });
       }
-      
-      throw error;
+
+      const summary = attempts.map(a => `${a.tier}: ${a.detail}`).join(' · ');
+      console.error('[TRANSLATE] All tiers failed —', summary);
+      throw new Error(`All translation routes failed — ${summary}`);
     }
   }
 }
@@ -571,8 +597,7 @@ async function translateText() {
     let fullTranslation = '';
     let detectedLang = 'auto';
     let serviceName = '';
-    let workerVersion = null;
-    
+
     // Translate each chunk
     for (let i = 0; i < chunks.length; i++) {
       // Show progress for multi-chunk translations
@@ -594,8 +619,7 @@ async function translateText() {
       if (i === 0) {
         detectedLang = result.detectedLang;
         serviceName = result.service || 'unknown';
-        workerVersion = result.workerVersion || null;
-        
+
         // Normalize Cyrillic detection for short texts
         detectedLang = normalizeCyrillicDetection(inputText, detectedLang);
       }
@@ -640,7 +664,7 @@ async function translateText() {
     console.log('[TRANSLATE] Service used:', serviceName);
     
     // Update header with workflow status
-    updateWorkflowStatus(detectedLang.toUpperCase(), targetLang.toUpperCase(), true, responseTime, serviceName, charCount, fullTranslation.length, totalChunks, workerVersion);
+    updateWorkflowStatus(detectedLang.toUpperCase(), targetLang.toUpperCase(), true, responseTime, serviceName, charCount, fullTranslation.length, totalChunks);
 
   } catch (error) {
     console.error('[TRANSLATE] Error:', error);
@@ -714,6 +738,17 @@ function autoCopyResult(text) {
   }
 }
 
+// Build a "<icon-span> rest-of-line" header row without innerHTML. The icon
+// gets its own <span style="font-style:normal"> (the header font is italic;
+// the icon should stay upright) — built via createElement/textContent
+// instead of a template string, so nothing passes through HTML parsing.
+function setIconLine(el, icon, restOfLine) {
+  const iconSpan = document.createElement('span');
+  iconSpan.style.fontStyle = 'normal';
+  iconSpan.textContent = icon;
+  el.replaceChildren(iconSpan, document.createTextNode(restOfLine));
+}
+
 // Update translation direction display in header
 function updateTranslationDirection() {
   const targetLangValue = document.getElementById('targetLang').value;
@@ -721,34 +756,32 @@ function updateTranslationDirection() {
   const line2 = document.getElementById('headerLine2');
   const code = targetLangValue.split('-')[0].toLowerCase();
 
-  line1.innerHTML = `auto-detect →&nbsp;&nbsp;${code}`;
+  // The two spaces after the arrow below are real U+00A0 (non-breaking space)
+  // characters, so this renders identically to the old "&nbsp;&nbsp;" without
+  // needing innerHTML/HTML-entity parsing.
+  line1.textContent = `auto-detect →  ${code}`;
   line2.textContent = 'ready to translate';
 
   updateStorageSize();
 }
 
 // Update workflow status in header
-function updateWorkflowStatus(detectedLang, targetLang, success, responseTime, serviceName, charCount, outputCharCount, totalChunks, workerVersion) {
+function updateWorkflowStatus(detectedLang, targetLang, success, responseTime, serviceName, charCount, outputCharCount, totalChunks) {
   const line1 = document.getElementById('headerLine1');
   const line2 = document.getElementById('headerLine2');
-  
+
   if (success && detectedLang && targetLang) {
     const formattedChars = charCount.toString();
     const responseTimeSec = (responseTime / 1000).toFixed(2) + " sec";
-    const isFallback = serviceName !== 'cloudflare worker';
+    const isFallback = serviceName === 'google clients5'; // gtx is primary, clients5 is the fallback
     const icon = isFallback ? '⚠' : '✓';
 
-    line1.innerHTML = `<span style="font-style:normal">✓</span> ${detectedLang.toLowerCase()} →&nbsp;&nbsp;${targetLang.toLowerCase()}`;
+    setIconLine(line1, '✓', ` ${detectedLang.toLowerCase()} →  ${targetLang.toLowerCase()}`);
 
-
-    // Build line2: icon · service vX.X.X · chars · chunks · time · size
+    // Build line2: icon · service · chars · chunks · time · size
     let infoParts = [];
 
-    if (!isFallback && workerVersion) {
-      infoParts.push(`cloudflare worker v${workerVersion}`);
-    } else {
-      infoParts.push(serviceName || 'unknown');
-    }
+    infoParts.push(serviceName || 'unknown');
 
     infoParts.push(`${formattedChars} / ${outputCharCount} chars`);
 
@@ -764,7 +797,7 @@ function updateWorkflowStatus(detectedLang, targetLang, success, responseTime, s
       infoParts.push(sizeEl.textContent);
     }
 
-    line2.innerHTML = `<span style="font-style:normal">${icon}</span> \u00A0${infoParts.join(' • ')}`;
+    setIconLine(line2, icon, `  ${infoParts.join(' • ')}`);
 
   } else if (success === false) {
     line1.textContent = 'translation failed';
